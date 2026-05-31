@@ -1,0 +1,115 @@
+/*
+ * Copyright (c) 2024, Miss Indicator Plugin
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ *    list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+// ── Mirrors the exact build.gradle from runelite/example-plugin ──────────────
+// Only changes: group/version, pluginMainClass, and the shadowJar Main-Class.
+
+plugins {
+	id 'java'
+}
+
+// The version of RuneLite to compile against.
+// Keep at 'latest.release' so the Plugin Hub always builds against the newest API.
+ext {
+	runeLiteVersion = 'latest.release'
+
+	// Update this whenever you rename the plugin class.
+	pluginMainClass = 'com.missindicator.MissIndicatorPlugin'
+}
+
+repositories {
+	mavenLocal()
+	maven {
+		url = 'https://repo.runelite.net'
+	}
+	mavenCentral()
+}
+
+dependencies {
+	compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
+
+	compileOnly 'org.projectlombok:lombok:1.18.40'
+	annotationProcessor 'org.projectlombok:lombok:1.18.40'
+
+	testImplementation 'junit:junit:4.13.2'
+	testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+	testImplementation group: 'net.runelite', name: 'jshell', version: runeLiteVersion
+}
+
+group = 'com.missindicator'
+version = '1.0-SNAPSHOT'
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release.set(11)
+}
+
+// The only class under src/test is a RuneLite launcher (a main() method), not
+// JUnit tests. Gradle 9 fails the build when the test task discovers no tests,
+// so opt out of that check here.
+tasks.named('test') {
+	failOnNoDiscoveredTests = false
+}
+
+// ── shadowJar: fat-jar used by the IntelliJ 'run' task to launch RuneLite ───
+tasks.register('shadowJar', Jar) {
+	dependsOn configurations.testRuntimeClasspath
+
+	manifest {
+		attributes('Main-Class': 'com.missindicator.MissIndicatorPluginTest', 'Multi-Release': true)
+	}
+
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+	from sourceSets.main.output
+	from sourceSets.test.output
+	from {
+		configurations.testRuntimeClasspath.collect { file ->
+			file.isDirectory() ? file : zipTree(file)
+		}
+	}
+
+	exclude 'META-INF/INDEX.LIST'
+	exclude 'META-INF/*.SF'
+	exclude 'META-INF/*.DSA'
+	exclude 'META-INF/*.RSA'
+	exclude '**/module-info.class'
+
+	group = BasePlugin.BUILD_GROUP
+}
+
+// ── run task: launches RuneLite in developer mode with this plugin loaded ────
+tasks.register('run', JavaExec) {
+	dependsOn shadowJar
+
+	group = ApplicationPlugin.APPLICATION_GROUP
+	description = 'Runs the plugin in developer mode'
+
+	classpath = files(shadowJar.archiveFile)
+	mainClass = 'com.missindicator.MissIndicatorPluginTest'
+
+	// RuneLite's ExternalPluginManager.loadBuiltin() requires assertions enabled.
+	jvmArgs '-ea'
+}
